@@ -1,1 +1,317 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ring Grind — Workout Dashboard</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Space+Grotesk:wght@500;700&display=swap');
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg: #0e0e10; --surface: #18181b; --surface2: #222226;
+    --border: rgba(255,255,255,0.07); --text: #f4f4f5; --muted: #71717a;
+    --accent: #a78bfa; --accent2: #34d399; --accent3: #fb923c; --danger: #f87171;
+    --font-display: 'Space Grotesk', sans-serif; --font-body: 'Inter', sans-serif;
+    --radius: 12px; --radius-sm: 8px;
+  }
+  body { background: var(--bg); color: var(--text); font-family: var(--font-body); font-size: 14px; line-height: 1.6; min-height: 100vh; }
+  header { padding: 1.5rem 2rem 1rem; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 1rem; }
+  .logo { font-family: var(--font-display); font-size: 1.5rem; font-weight: 700; letter-spacing: -0.03em; }
+  .logo span { color: var(--accent); }
+  .header-right { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  .last-updated { font-size: 11px; color: var(--muted); }
+  .last-updated strong { color: var(--accent2); font-weight: 500; }
+  .refresh-btn { font-size: 11px; font-weight: 500; padding: 5px 12px; border-radius: 20px; border: 1px solid rgba(167,139,250,0.3); background: rgba(167,139,250,0.08); color: var(--accent); cursor: pointer; font-family: var(--font-body); transition: all 0.15s; }
+  .refresh-btn:hover { background: rgba(167,139,250,0.18); }
+  main { max-width: 1100px; margin: 0 auto; padding: 1.5rem 2rem 4rem; }
 
+  /* Loading / error states */
+  .state-box { display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 300px; gap: 12px; color: var(--muted); font-size: 14px; }
+  .spinner { width: 32px; height: 32px; border: 2px solid rgba(167,139,250,0.2); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.8s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .error-icon { font-size: 2rem; }
+  .error-msg { color: var(--danger); font-size: 13px; text-align: center; max-width: 400px; }
+  .retry-btn { font-size: 12px; padding: 6px 16px; border-radius: 20px; border: 1px solid rgba(248,113,113,0.3); background: rgba(248,113,113,0.08); color: var(--danger); cursor: pointer; font-family: var(--font-body); }
+
+  .metrics { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 1.5rem; }
+  .metric { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 1.1rem 1.25rem; }
+  .metric-label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 6px; }
+  .metric-value { font-family: var(--font-display); font-size: 2rem; font-weight: 700; letter-spacing: -0.03em; line-height: 1; }
+  .metric-sub { font-size: 11px; color: var(--muted); margin-top: 5px; }
+  .purple { color: var(--accent); } .green { color: var(--accent2); } .orange { color: var(--accent3); }
+
+  .section-label { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); margin-bottom: 0.75rem; }
+  .tabs { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 1.25rem; }
+  .tab { font-size: 12px; font-weight: 500; padding: 5px 14px; border-radius: 20px; border: 1px solid var(--border); background: transparent; color: var(--muted); cursor: pointer; transition: all 0.15s; font-family: var(--font-body); }
+  .tab:hover { border-color: rgba(167,139,250,0.4); color: var(--text); }
+  .tab.active { background: rgba(167,139,250,0.15); border-color: rgba(167,139,250,0.5); color: var(--accent); }
+
+  .chart-full { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 1.25rem; margin-bottom: 1.25rem; }
+  .chart-full-title { font-family: var(--font-display); font-size: 14px; font-weight: 500; margin-bottom: 0.5rem; }
+  .chart-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 1.25rem; }
+  .chart-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 1.25rem; }
+  .chart-card-title { font-size: 13px; font-weight: 500; color: var(--muted); margin-bottom: 0.75rem; }
+  .legend { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 10px; }
+  .legend-item { display: flex; align-items: center; gap: 5px; font-size: 11px; color: var(--muted); }
+  .legend-dot { width: 8px; height: 8px; border-radius: 2px; flex-shrink: 0; }
+
+  .ex-grid { display: grid; grid-template-columns: 1fr; gap: 6px; }
+  .ex-row { display: flex; align-items: center; gap: 10px; padding: 10px 14px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm); transition: border-color 0.15s; }
+  .ex-row:hover { border-color: rgba(167,139,250,0.3); }
+  .ex-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+  .ex-name { font-size: 13px; font-weight: 500; color: var(--text); flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .ex-focus { font-size: 11px; color: var(--muted); width: 130px; flex-shrink: 0; }
+  .bar-wrap { flex: 0 0 80px; height: 3px; background: rgba(255,255,255,0.06); border-radius: 4px; overflow: hidden; }
+  .bar-fill { height: 100%; border-radius: 4px; }
+  .ex-trend { font-size: 12px; font-weight: 600; width: 54px; text-align: right; flex-shrink: 0; }
+  .up { color: var(--accent2); } .down { color: var(--danger); } .flat { color: var(--muted); }
+
+  footer { text-align: center; padding: 2rem; font-size: 11px; color: var(--muted); border-top: 1px solid var(--border); }
+  @media (max-width: 700px) {
+    .metrics { grid-template-columns: 1fr 1fr; }
+    .chart-row { grid-template-columns: 1fr; }
+    main { padding: 1rem 1rem 3rem; }
+    .ex-focus { display: none; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">ring<span>grind</span></div>
+  <div class="header-right">
+    <div class="last-updated" id="last-updated">Loading data…</div>
+    <button class="refresh-btn" onclick="loadData()">↻ Refresh</button>
+  </div>
+</header>
+
+<main id="main">
+  <div class="state-box" id="loading-state">
+    <div class="spinner"></div>
+    <div>Fetching your latest workout data…</div>
+  </div>
+  <div id="dashboard" style="display:none"></div>
+</main>
+
+<footer>ring grind · syncs from google sheets on every load</footer>
+
+<script>
+const CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTV5c_Jb58VG1CVuAGVxY8eZD9mXkwGIMWsQHGKrtYSdK6DJBxgfztig6sGVrXnczx_LcOjA3yuOqTC/pub?gid=1768017463&single=true&output=csv';
+
+const lineColors = ['#a78bfa','#34d399','#fb923c','#60a5fa','#f472b6','#facc15','#4ade80','#38bdf8','#c084fc','#fbbf24','#86efac','#67e8f9','#f9a8d4','#d946ef','#22d3ee','#a3e635','#fb7185','#e879f9','#fde68a','#bbf7d0','#bae6fd','#ddd6fe'];
+const dayColors = {
+  'Day 1: Upper Body Pull':'#a78bfa','Day 2: Upper Body Push':'#34d399',
+  'Day 2: Lower Body':'#4ade80','Day 3: Pull & Core':'#60a5fa',
+  'Day 3: Lower Body':'#38bdf8','Day 4: Push & Skill':'#fb923c','Core And Cardio':'#facc15'
+};
+
+let rawData = [], weeks = [], activeDay = 'all';
+let mainChart = null;
+
+function parseReps(str) {
+  if (!str || str.trim() === '' || str === '-') return null;
+  // Extract first set reps: "1st 11, 2nd 10..." → 11
+  const m = str.match(/1st\s+(\d+(?:\.\d+)?)/i);
+  if (m) return parseFloat(m[1]);
+  // Plain number
+  const n = parseFloat(str);
+  return isNaN(n) ? null : n;
+}
+
+function firstLast(reps) {
+  const valid = reps.map((v,i) => ({v,i})).filter(x => x.v !== null);
+  return { first: valid[0]?.v ?? null, last: valid[valid.length-1]?.v ?? null };
+}
+
+function loadData() {
+  document.getElementById('loading-state') && showLoading();
+  document.getElementById('dashboard').style.display = 'none';
+  document.getElementById('last-updated').textContent = 'Refreshing…';
+
+  Papa.parse(CSV_URL, {
+    download: true,
+    skipEmptyLines: true,
+    complete: function(results) {
+      try {
+        processCSV(results.data);
+      } catch(e) {
+        showError('Could not parse sheet data. Make sure the sheet is published as CSV.<br><small>' + e.message + '</small>');
+      }
+    },
+    error: function(err) {
+      showError('Could not reach Google Sheets. Check your internet connection or re-publish the sheet.<br><small>' + err + '</small>');
+    }
+  });
+}
+
+function showLoading() {
+  document.getElementById('main').innerHTML = `
+    <div class="state-box" id="loading-state">
+      <div class="spinner"></div>
+      <div>Fetching your latest workout data…</div>
+    </div>
+    <div id="dashboard" style="display:none"></div>`;
+}
+
+function showError(msg) {
+  document.getElementById('main').innerHTML = `
+    <div class="state-box">
+      <div class="error-icon">⚠️</div>
+      <div class="error-msg">${msg}</div>
+      <button class="retry-btn" onclick="loadData()">Try again</button>
+    </div>`;
+  document.getElementById('last-updated').textContent = 'Failed to load';
+}
+
+function processCSV(rows) {
+  if (rows.length < 2) { showError('Sheet appears empty.'); return; }
+
+  const header = rows[0];
+  // Columns: Day, Exercise, Sets, Reps/Time, Focus, week1, week2...
+  const weekCols = [];
+  for (let i = 5; i < header.length; i++) {
+    if (header[i] && header[i].trim() !== '') weekCols.push({index: i, label: header[i].trim()});
+  }
+  weeks = weekCols.map(w => w.label);
+
+  rawData = [];
+  for (let r = 1; r < rows.length; r++) {
+    const row = rows[r];
+    const day = (row[0] || '').trim();
+    const exercise = (row[1] || '').trim();
+    if (!day || !exercise || day === 'Rest') continue;
+    const focus = (row[4] || '').trim();
+    const reps = weekCols.map(w => parseReps(row[w.index] || ''));
+    rawData.push({ day, exercise, focus, reps });
+  }
+
+  if (rawData.length === 0) { showError('No exercise rows found. Check sheet structure.'); return; }
+
+  const now = new Date();
+  document.getElementById('last-updated').innerHTML = `Live from Google Sheets · <strong>Updated ${now.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}</strong>`;
+  renderDashboard();
+}
+
+function renderDashboard() {
+  document.getElementById('main').innerHTML = `
+    <div class="metrics" id="metrics"></div>
+    <div class="section-label">Filter by training day</div>
+    <div class="tabs" id="tabs"></div>
+    <div class="chart-full">
+      <div class="chart-full-title" id="main-chart-title">First set reps — all exercises</div>
+      <div class="legend" id="main-legend"></div>
+      <div style="position:relative;height:280px;"><canvas id="mainChart" role="img" aria-label="Rep progression chart">Rep progression over weeks.</canvas></div>
+    </div>
+    <div class="chart-row">
+      <div class="chart-card">
+        <div class="chart-card-title">Exercises per training day</div>
+        <div style="position:relative;height:200px;"><canvas id="volChart" role="img" aria-label="Exercises per day">Volume by day.</canvas></div>
+      </div>
+      <div class="chart-card">
+        <div class="chart-card-title">Average reps per week</div>
+        <div style="position:relative;height:200px;"><canvas id="wowChart" role="img" aria-label="Average reps per week">Weekly average trend.</canvas></div>
+      </div>
+    </div>
+    <div class="section-label" style="margin-bottom:0.75rem;">Exercise progression — first → last session</div>
+    <div class="ex-grid" id="ex-list"></div>
+  `;
+
+  // Metrics
+  const improving = rawData.filter(e => { const {first,last} = firstLast(e.reps); return first!==null&&last!==null&&last>first; }).length;
+  const days = [...new Set(rawData.map(e => e.day))];
+  const bestGain = (() => {
+    let best=null,pct=0;
+    rawData.forEach(e => { const {first,last}=firstLast(e.reps); if(first&&last&&first>0){const p=((last-first)/first)*100;if(p>pct){pct=p;best=e.exercise;}} });
+    return {name:best||'—',pct:Math.round(pct)};
+  })();
+  document.getElementById('metrics').innerHTML = `
+    <div class="metric"><div class="metric-label">Exercises tracked</div><div class="metric-value purple">${rawData.length}</div><div class="metric-sub">across ${days.length} training days</div></div>
+    <div class="metric"><div class="metric-label">Weeks logged</div><div class="metric-value" style="color:var(--text)">${weeks.length}</div><div class="metric-sub">${weeks[0]} → ${weeks[weeks.length-1]}</div></div>
+    <div class="metric"><div class="metric-label">Improving exercises</div><div class="metric-value green">${improving}<span style="font-size:1.1rem;opacity:0.5">/${rawData.length}</span></div><div class="metric-sub">first → last session</div></div>
+    <div class="metric"><div class="metric-label">Best gain</div><div class="metric-value orange">+${bestGain.pct}%</div><div class="metric-sub">${bestGain.name}</div></div>
+  `;
+
+  // Tabs
+  activeDay = 'all';
+  const tabsEl = document.getElementById('tabs');
+  [{key:'all',label:'All'}, ...days.map(d=>({key:d,label:d.replace('Day ','D').replace(': ',' · ')}))].forEach(({key,label}) => {
+    const b = document.createElement('button');
+    b.className='tab'+(key==='all'?' active':'');
+    b.textContent=label;
+    b.onclick=()=>{ activeDay=key; document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active')); b.classList.add('active'); updateMainChart(); updateExList(); };
+    tabsEl.appendChild(b);
+  });
+
+  updateMainChart();
+  renderVolChart();
+  renderWowChart();
+  updateExList();
+}
+
+function updateMainChart() {
+  const filtered = activeDay==='all' ? rawData : rawData.filter(e=>e.day===activeDay);
+  const datasets = filtered.map((e,i)=>({
+    label:e.exercise, data:e.reps.map(v=>v===null?null:v),
+    borderColor:lineColors[i%lineColors.length], backgroundColor:lineColors[i%lineColors.length]+'18',
+    pointRadius:3, pointHoverRadius:5, borderWidth:2, tension:0.35, spanGaps:true, fill:false
+  }));
+  document.getElementById('main-legend').innerHTML = filtered.map((e,i)=>
+    `<div class="legend-item"><div class="legend-dot" style="background:${lineColors[i%lineColors.length]}"></div>${e.exercise}</div>`).join('');
+  document.getElementById('main-chart-title').textContent = activeDay==='all'?'First set reps — all exercises':'First set reps — '+activeDay;
+  if (mainChart) mainChart.destroy();
+  mainChart = new Chart(document.getElementById('mainChart'), {
+    type:'line', data:{labels:weeks,datasets},
+    options:{ responsive:true, maintainAspectRatio:false,
+      plugins:{ legend:{display:false}, tooltip:{mode:'index',intersect:false,backgroundColor:'#18181b',borderColor:'rgba(255,255,255,0.1)',borderWidth:1,titleColor:'#f4f4f5',bodyColor:'#a1a1aa',padding:10} },
+      scales:{
+        x:{ticks:{color:'#71717a',font:{size:11},autoSkip:false,maxRotation:35},grid:{color:'rgba(255,255,255,0.04)'},border:{color:'rgba(255,255,255,0.08)'}},
+        y:{ticks:{color:'#71717a',font:{size:11}},grid:{color:'rgba(255,255,255,0.04)'},border:{color:'rgba(255,255,255,0.08)'}}
+      }
+    }
+  });
+}
+
+function renderVolChart() {
+  const dayCounts={};
+  rawData.forEach(e=>{dayCounts[e.day]=(dayCounts[e.day]||0)+1;});
+  new Chart(document.getElementById('volChart'),{
+    type:'bar',
+    data:{labels:Object.keys(dayCounts).map(d=>d.replace('Day ','D').replace(': ','·')),datasets:[{data:Object.values(dayCounts),backgroundColor:Object.keys(dayCounts).map(d=>(dayColors[d]||'#71717a')+'99'),borderColor:Object.keys(dayCounts).map(d=>dayColors[d]||'#71717a'),borderWidth:1.5,borderRadius:6}]},
+    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{backgroundColor:'#18181b',borderColor:'rgba(255,255,255,0.1)',borderWidth:1,titleColor:'#f4f4f5',bodyColor:'#a1a1aa'}},
+      scales:{x:{ticks:{color:'#71717a',font:{size:10},maxRotation:35,autoSkip:false},grid:{display:false},border:{color:'rgba(255,255,255,0.08)'}},y:{ticks:{color:'#71717a',font:{size:11},stepSize:1},grid:{color:'rgba(255,255,255,0.04)'},border:{color:'rgba(255,255,255,0.08)'}}}}
+  });
+}
+
+function renderWowChart() {
+  const weekAvg=weeks.map((_,wi)=>{let s=0,c=0;rawData.forEach(e=>{if(e.reps[wi]!==null){s+=e.reps[wi];c++;}});return c?parseFloat((s/c).toFixed(1)):null;});
+  new Chart(document.getElementById('wowChart'),{
+    type:'line',data:{labels:weeks,datasets:[{data:weekAvg,borderColor:'#a78bfa',backgroundColor:'rgba(167,139,250,0.1)',pointRadius:4,pointBackgroundColor:'#a78bfa',borderWidth:2.5,tension:0.35,spanGaps:true,fill:true}]},
+    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{backgroundColor:'#18181b',borderColor:'rgba(255,255,255,0.1)',borderWidth:1,titleColor:'#f4f4f5',bodyColor:'#a1a1aa',callbacks:{label:ctx=>' Avg: '+ctx.parsed.y}}},
+      scales:{x:{ticks:{color:'#71717a',font:{size:10},autoSkip:false,maxRotation:35},grid:{color:'rgba(255,255,255,0.04)'},border:{color:'rgba(255,255,255,0.08)'}},y:{ticks:{color:'#71717a',font:{size:11}},grid:{color:'rgba(255,255,255,0.04)'},border:{color:'rgba(255,255,255,0.08)'}}}}
+  });
+}
+
+function updateExList() {
+  const filtered = activeDay==='all'?rawData:rawData.filter(e=>e.day===activeDay);
+  document.getElementById('ex-list').innerHTML = filtered.map((e,i)=>{
+    const {first,last}=firstLast(e.reps);
+    let pct=null,cls='flat',arrow='→';
+    if(first!==null&&last!==null&&first>0){pct=Math.round(((last-first)/first)*100);cls=pct>0?'up':pct<0?'down':'flat';arrow=pct>0?'↑':pct<0?'↓':'→';}
+    const barW=(first&&last)?Math.min(100,Math.round((last/Math.max(first,last))*100)):50;
+    const col=lineColors[i%lineColors.length];
+    return `<div class="ex-row">
+      <div class="ex-dot" style="background:${col}"></div>
+      <div class="ex-name">${e.exercise}</div>
+      <div class="ex-focus">${e.focus}</div>
+      <div class="bar-wrap"><div class="bar-fill" style="width:${barW}%;background:${col}"></div></div>
+      <div class="ex-trend ${cls}">${pct!==null?arrow+' '+Math.abs(pct)+'%':'—'}</div>
+    </div>`;
+  }).join('');
+}
+
+loadData();
+</script>
+</body>
+</html>
